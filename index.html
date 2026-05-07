@@ -193,26 +193,86 @@ function fmtHora(v){
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 // ── Carregar eventos do backend ────────────────────────────
+var _carregando = false;
+
 function carregar(){
+  if(_carregando) return;
+  _carregando = true;
   var badge = document.getElementById('hdrBadge');
+  var el = document.getElementById('calGrid');
   if(badge) badge.textContent = 'Carregando...';
-  fetch(BACKEND, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({fn: 'getAgendaEventosSalvos', args: []})
-  })
-    .then(function(r){ return r.json(); })
-    .then(function(data){
-      _eventos = (data.result || []);
-      atualizarStats();
-      renderCal();
-      if(badge) badge.textContent = _eventos.length + ' eventos';
+
+  // Tenta primeiro: fetch GET direto (funciona se CORS ok)
+  fetch(BACKEND + '?action=agenda&callback=_cbAgenda&t=' + Date.now())
+    .then(function(r){ return r.text(); })
+    .then(function(txt){
+      // Extrai JSON do wrapper JSONP: _cbAgenda({...})
+      var m = txt.match(/\w+\((\{[\s\S]*\})\)/);
+      if(m){
+        var data = JSON.parse(m[1]);
+        _receberEventos(data.result || []);
+      } else {
+        throw new Error('Formato inesperado');
+      }
     })
-    .catch(function(e){
-      if(badge) badge.textContent = 'Erro ao carregar';
-      var el = document.getElementById('calGrid');
-      if(el) el.innerHTML = '<div class="loading" style="grid-column:1/-1">⚠️ Não foi possível carregar os eventos.<br><br><small>Verifique se o acesso está liberado nas configurações do Apps Script.</small></div>';
+    .catch(function(){
+      // Fallback: JSONP via script tag
+      _tentarJSONP();
     });
+}
+
+function _tentarJSONP(){
+  var badge = document.getElementById('hdrBadge');
+  var el = document.getElementById('calGrid');
+
+  var old = document.getElementById('_jsonpScript');
+  if(old) old.parentNode.removeChild(old);
+
+  var timeout = setTimeout(function(){
+    _carregando = false;
+    if(badge) badge.textContent = 'Erro';
+    if(el) el.innerHTML = _errHtml();
+  }, 12000);
+
+  window._cbAgenda = function(data){
+    clearTimeout(timeout);
+    _receberEventos(data.result || []);
+    var s = document.getElementById('_jsonpScript');
+    if(s) s.parentNode.removeChild(s);
+  };
+
+  var script = document.createElement('script');
+  script.id = '_jsonpScript';
+  script.src = BACKEND + '?action=agenda&callback=_cbAgenda&t=' + Date.now();
+  script.onerror = function(){
+    clearTimeout(timeout);
+    _carregando = false;
+    if(badge) badge.textContent = 'Erro';
+    if(el) el.innerHTML = _errHtml();
+  };
+  document.head.appendChild(script);
+}
+
+function _receberEventos(evs){
+  _carregando = false;
+  _eventos = evs;
+  atualizarStats();
+  renderCal();
+  var badge = document.getElementById('hdrBadge');
+  if(badge) badge.textContent = _eventos.length + ' eventos';
+}
+
+function _errHtml(){
+  return '<div class="loading" style="grid-column:1/-1">'
+    + '<div style="font-size:28px;margin-bottom:10px">⚠️</div>'
+    + '<div style="font-size:14px;font-weight:700;color:#c62828;margin-bottom:8px">Não foi possível carregar</div>'
+    + '<div style="font-size:12px;color:#666;line-height:1.6;margin-bottom:16px">'
+    + '1. Reimplante o <b>Code.gs</b> (implantação existente)<br>'
+    + '2. Acesso: <b>Qualquer pessoa, mesmo anônima</b><br>'
+    + '3. Executar como: <b>Eu</b>'
+    + '</div>'
+    + '<button onclick="location.reload()" style="background:#1a4a7a;color:#fff;border:none;border-radius:8px;padding:8px 20px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🔄 Tentar novamente</button>'
+    + '</div>';
 }
 
 // ── Stats ───────────────────────────────────────────────────
