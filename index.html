@@ -152,6 +152,7 @@
 
 <script>
 var BACKEND = 'https://script.google.com/macros/s/AKfycbwtlWfCduBsMBr-omIXjUfuLsqWy1sKVoNnWXDrOjKW14b_GWxO7dqNQSvA8JKjt7hs/exec';
+var SHEET_ID = '1AMwOpaVa2hcpiaVmXDcZvNiE-7rQeyt4vDU42GkLrLc';
 var _eventos = [];
 var _filtro = 'todos';
 var _calMes = new Date(); _calMes.setDate(1); _calMes.setHours(0,0,0,0);
@@ -188,55 +189,66 @@ function carregar(){
   var el = document.getElementById('calGrid');
   if(badge) badge.textContent = 'Carregando...';
 
-  // Tenta primeiro: fetch GET direto (funciona se CORS ok)
-  fetch(BACKEND + '?action=agenda&callback=_cbAgenda&t=' + Date.now())
-    .then(function(r){ return r.text(); })
-    .then(function(txt){
-      // Extrai JSON do wrapper JSONP: _cbAgenda({...})
-      var m = txt.match(/\w+\((\{[\s\S]*\})\)/);
-      if(m){
-        var data = JSON.parse(m[1]);
-        _receberEventos(data.result || []);
-      } else {
-        throw new Error('Formato inesperado');
-      }
+  // Usa proxy CORS para contornar bloqueio do Google Sheets
+  var csvDirect = 'https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/gviz/tq?tqx=out:csv&sheet=AgendaEventos';
+  var csvUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(csvDirect);
+
+  fetch(csvUrl)
+    .then(function(r){
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      return r.text();
     })
-    .catch(function(){
-      // Fallback: JSONP via script tag
-      _tentarJSONP();
+    .then(function(csv){
+      var eventos = _parseCsvAgenda(csv);
+      _receberEventos(eventos);
+    })
+    .catch(function(e){
+      console.warn('CSV falhou:', e);
+      _carregando = false;
+      if(badge) badge.textContent = 'Erro';
+      if(el) el.innerHTML = _errHtml();
     });
 }
 
-function _tentarJSONP(){
-  var badge = document.getElementById('hdrBadge');
-  var el = document.getElementById('calGrid');
+function _parseCsvAgenda(csv){
+  var lines = csv.trim().split('\n');
+  if(lines.length < 2) return [];
+  var eventos = [];
+  for(var i = 1; i < lines.length; i++){
+    var cols = _splitCsvLine(lines[i]);
+    if(!cols[0] && !cols[1]) continue;
+    var limpa = function(v){ return (v||'').replace(/^"|"$/g,'').replace(/""/g,'"'); };
+    eventos.push({
+      id:          limpa(cols[0]),
+      titulo:      limpa(cols[1]),
+      cliente:     limpa(cols[2]),
+      data:        limpa(cols[3]),
+      dataISO:     limpa(cols[4]),
+      diaInteiro:  limpa(cols[5]),
+      horaInicio:  limpa(cols[6]),
+      horaFim:     limpa(cols[7]),
+      responsavel: limpa(cols[8]),
+      descricao:   limpa(cols[9]),
+      criadoEm:    limpa(cols[10]),
+      tecnicos:    limpa(cols[11]||'')
+    });
+  }
+  return eventos;
+}
 
-  var old = document.getElementById('_jsonpScript');
-  if(old) old.parentNode.removeChild(old);
-
-  var timeout = setTimeout(function(){
-    _carregando = false;
-    if(badge) badge.textContent = 'Erro';
-    if(el) el.innerHTML = _errHtml();
-  }, 12000);
-
-  window._cbAgenda = function(data){
-    clearTimeout(timeout);
-    _receberEventos(data.result || []);
-    var s = document.getElementById('_jsonpScript');
-    if(s) s.parentNode.removeChild(s);
-  };
-
-  var script = document.createElement('script');
-  script.id = '_jsonpScript';
-  script.src = BACKEND + '?action=agenda&callback=_cbAgenda&t=' + Date.now();
-  script.onerror = function(){
-    clearTimeout(timeout);
-    _carregando = false;
-    if(badge) badge.textContent = 'Erro';
-    if(el) el.innerHTML = _errHtml();
-  };
-  document.head.appendChild(script);
+function _splitCsvLine(line){
+  var result = [], cur = '', inQ = false;
+  for(var i = 0; i < line.length; i++){
+    var c = line[i];
+    if(c === '"'){
+      if(inQ && line[i+1] === '"'){ cur += '"'; i++; }
+      else inQ = !inQ;
+    } else if(c === ',' && !inQ){
+      result.push(cur); cur = '';
+    } else { cur += c; }
+  }
+  result.push(cur);
+  return result;
 }
 
 function _receberEventos(evs){
