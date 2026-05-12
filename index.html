@@ -242,7 +242,6 @@ function _tentarJSONP(){
 function _receberEventos(evs){
   _carregando = false;
   _eventos = evs;
-  atualizarStats();
   renderCal();
   var badge = document.getElementById('hdrBadge');
   if(badge) badge.textContent = _eventos.length + ' eventos';
@@ -262,20 +261,7 @@ function _errHtml(){
 }
 
 // ── Stats ───────────────────────────────────────────────────
-function atualizarStats(){
-  var hoje = new Date(); hoje.setHours(0,0,0,0);
-  var mes = hoje.getMonth(), ano = hoje.getFullYear();
-  var total = _eventos.length, mesCnt = 0, prox = 0;
-  _eventos.forEach(function(ev){
-    var d = parseData(ev.dataISO || ev.data || '');
-    if(!d) return;
-    if(d >= hoje) prox++;
-    if(d.getMonth() === mes && d.getFullYear() === ano) mesCnt++;
-  });
-  document.getElementById('stTotal').textContent = total;
-  document.getElementById('stMes').textContent = mesCnt;
-  document.getElementById('stProx').textContent = prox;
-}
+function atualizarStats(){ /* removido */ }
 
 // ── Filtro ──────────────────────────────────────────────────
 function setFiltro(f){
