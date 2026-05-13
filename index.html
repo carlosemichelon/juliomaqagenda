@@ -188,33 +188,23 @@ function carregar(){
   var el = document.getElementById('calGrid');
   if(badge) badge.textContent = 'Carregando...';
 
-  // Remove script anterior se existir
-  var oldScript = document.getElementById('_jsonpScript');
-  if(oldScript) oldScript.parentNode.removeChild(oldScript);
-
-  var timeout = setTimeout(function(){
-    _carregando = false;
-    if(badge) badge.textContent = 'Erro';
-    if(el) el.innerHTML = _errHtml();
-  }, 15000);
-
-  window._cbAgenda = function(data){
-    clearTimeout(timeout);
+  // doPost com fn=getAgendaEventosSalvos — mesmo mecanismo do app principal
+  fetch(BACKEND, {
+    redirect: 'follow',
+    method: 'POST',
+    headers: {'Content-Type': 'text/plain;charset=utf-8'},
+    body: JSON.stringify({fn:'getAgendaEventosSalvos', args:[]})
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(data){
     _receberEventos(data.result || []);
-    var s = document.getElementById('_jsonpScript');
-    if(s) s.parentNode.removeChild(s);
-  };
-
-  var script = document.createElement('script');
-  script.id = '_jsonpScript';
-  script.src = BACKEND + '?action=agenda&callback=_cbAgenda&t=' + Date.now();
-  script.onerror = function(){
-    clearTimeout(timeout);
+  })
+  .catch(function(e){
+    console.warn('fetch falhou:', e);
     _carregando = false;
     if(badge) badge.textContent = 'Erro';
     if(el) el.innerHTML = _errHtml();
-  };
-  document.head.appendChild(script);
+  });
 }
 
 function _receberEventos(evs){
